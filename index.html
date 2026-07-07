@@ -200,6 +200,11 @@ select option{background:var(--surf);color:var(--txt)}
 #update-bar .ub-go{ background:#fff; color:var(--gold-d); }
 #update-bar .ub-later{ background:transparent; color:#fff; border:1px solid rgba(255,255,255,0.65); }
 
+/* Tombol konfirmasi bahaya (hapus/keluar) */
+.btn-danger{ background:linear-gradient(120deg,#DC2626,#EF4444); color:#fff; border:none; box-shadow:0 4px 12px rgba(220,38,38,.28); }
+.btn-danger:hover{ filter:brightness(1.06); transform:translateY(-1px); }
+#confirm-ic{ width:52px; height:52px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:26px; margin:0 auto 14px; }
+
 @media (max-width: 820px) {
   .app { flex-direction: column; }
   .mobile-header { display: flex; }
@@ -337,6 +342,17 @@ select option{background:var(--surf);color:var(--txt)}
   <button class="ub-go" onclick="doUpdateNow()">Muat Ulang Sekarang</button>
   <button class="ub-later" onclick="dismissUpdate()">Nanti</button>
 </div>
+<div class="mo" id="confirm-modal" style="display:none;z-index:10002" onclick="if(event.target===this)_confirmResolve(false)">
+  <div class="mo-box" style="max-width:400px;text-align:center" onclick="event.stopPropagation()">
+    <div id="confirm-ic">⚠️</div>
+    <h3 id="confirm-title" style="font-size:20px;margin-bottom:8px">Konfirmasi</h3>
+    <p id="confirm-msg" style="color:var(--muted);font-size:14px;line-height:1.6"></p>
+    <div class="mo-act" style="justify-content:center;border-top:none;padding-top:18px">
+      <button class="btn btn-g" id="confirm-cancel" onclick="_confirmResolve(false)">Batal</button>
+      <button class="btn btn-p" id="confirm-ok" onclick="_confirmResolve(true)">Ya</button>
+    </div>
+  </div>
+</div>
 <div id="cart-fab" onclick="scrollToCart()"></div>
 <iframe id="printFrame" style="display:none; width: 0; height: 0;"></iframe>
 
@@ -358,7 +374,7 @@ const SESS_KEY = 'dapurpro_v4_session';
 const LS = 'dapur_pro_v4_cache';
 const OUTBOX_KEY = 'dapur_pro_v4_outbox';
 // Versi aplikasi — DINAIKKAN setiap rilis. Dipakai untuk notifikasi update otomatis.
-const APP_VERSION = '2026-07-07.2';
+const APP_VERSION = '2026-07-07.3';
 
 let session = { token:'', username:'', role:'' };
 let currentUser = { username:'', role:'' };
@@ -537,9 +553,9 @@ async function doLogin() {
   } catch (e) { toast('Gagal terhubung ke server. Cek internet & API_URL.', 'e'); }
   finally { btn.textContent = "Masuk ke Sistem"; btn.disabled = false; }
 }
-function doLogout() {
-  if (!confirm("Yakin ingin keluar dari akun ini?")) return;
-  if (outbox.length && !confirm("Masih ada " + outbox.length + " data belum tersinkron. Tetap keluar?")) return;
+async function doLogout() {
+  if (!(await confirmDialog({ title: 'Keluar Akun', message: 'Yakin ingin keluar dari akun ini?', okText: 'Ya, Keluar', danger: true }))) return;
+  if (outbox.length && !(await confirmDialog({ title: 'Data Belum Tersinkron', message: 'Masih ada ' + outbox.length + ' data yang belum terkirim ke server. Tetap keluar sekarang?', okText: 'Tetap Keluar', danger: true }))) return;
   if (session.token) api('logout', {}).catch(() => {});
   clearSession();
   document.getElementById('login-pass').value = '';
@@ -717,7 +733,7 @@ async function saveUser() {
 }
 async function hapusUser(username) {
   if (username === currentUser.username) return toast('Tidak bisa menghapus akun yang sedang dipakai!', 'e');
-  if (!confirm('Yakin ingin menghapus user ' + username + '?')) return;
+  if (!(await confirmDialog({ title: 'Hapus Pengguna', message: 'Yakin ingin menghapus user "' + username + '"?', okText: 'Ya, Hapus', danger: true }))) return;
   if (!requireOnline()) return;
   const res = await api('deleteUser', { username });
   if (res.ok) { S.users = S.users.filter(u => u.username !== username); persist(); renderPengaturan(); toast('User berhasil dihapus!'); }
@@ -744,10 +760,10 @@ function bukaShift() {
   renderShift(); toast('Shift berhasil dibuka!');
 }
 function hitungSelisihShift(expectedCash) { const aktual = parseFloat(document.getElementById('input-aktual-kas').value) || 0; const selisih = aktual - expectedCash; const el = document.getElementById('teks-selisih'); el.textContent = (selisih > 0 ? '+ ' : '') + idr(selisih); el.className = selisih < 0 ? 'c-red' : (selisih > 0 ? 'c-grn' : 'c-txt'); }
-function tutupShift(expectedCash) {
+async function tutupShift(expectedCash) {
   const aktual = parseFloat(document.getElementById('input-aktual-kas').value);
   if (isNaN(aktual) || aktual < 0) { toast('Masukkan uang fisik aktual!', 'e'); return; }
-  if (!confirm("Yakin ingin menutup shift ini? Aksi ini tidak bisa dibatalkan.")) return;
+  if (!(await confirmDialog({ title: 'Tutup Shift', message: 'Yakin ingin menutup shift ini? Aksi ini tidak bisa dibatalkan.', okText: 'Ya, Tutup Shift', danger: true }))) return;
   const selisih = aktual - expectedCash;
   const shiftTrx = S.trx.filter(t => t.id_shift === S.shiftAktif.id);
   const totalCash = shiftTrx.filter(t => t.metode === 'Cash').reduce((s,t) => s + t.total, 0);
@@ -809,7 +825,7 @@ function savePengeluaran() {
   closeModal(); renderPengeluaran(); toast('Berhasil disimpan');
 }
 async function hapusPengeluaran(id) {
-  if (!confirm('Hapus catatan ini?')) return;
+  if (!(await confirmDialog({ title: 'Hapus Pengeluaran', message: 'Hapus catatan pengeluaran ini?', okText: 'Ya, Hapus', danger: true }))) return;
   if (!requireOnline()) return;
   const res = await api('deletePengeluaran', { id });
   if (res.ok) { S.pengeluaran = S.pengeluaran.filter(p => p.id !== id); persist(); renderPengeluaran(); toast('Dihapus'); }
@@ -829,7 +845,7 @@ function renderBahan() {
 }
 function editBB(id) { const b = S.bb.find(x=>x.id===id); if(b) modalEditBB(b); }
 async function hapusBB(id) {
-  if (!confirm('Hapus bahan ini?')) return;
+  if (!(await confirmDialog({ title: 'Hapus Bahan', message: 'Hapus bahan ini dari daftar?', okText: 'Ya, Hapus', danger: true }))) return;
   if (!requireOnline()) return;
   const res = await api('deleteBahan', { id });
   if (res.ok) { S.bb = S.bb.filter(b => b.id !== id); persist(); renderBahan(); toast('Dihapus'); }
@@ -878,7 +894,7 @@ async function toggleMenu(id) {
 }
 function editMenu(id) { const m = S.menu.find(x=>x.id===id); if(m) openMenuModal(m); }
 async function hapusMenu(id) {
-  if (!confirm('Hapus menu secara permanen?')) return;
+  if (!(await confirmDialog({ title: 'Hapus Menu', message: 'Hapus menu ini secara permanen?', okText: 'Ya, Hapus', danger: true }))) return;
   if (!requireOnline()) return;
   const res = await api('deleteMenu', { id });
   if (res.ok) { S.menu = S.menu.filter(m => m.id !== id); persist(); renderMenu(); toast('Dihapus'); }
@@ -1117,6 +1133,26 @@ async function saveMenu() {
 // ═══════════════════════════════════════════════
 // INISIALISASI
 // ═══════════════════════════════════════════════
+// Dialog konfirmasi custom (pengganti confirm bawaan browser) — berbasis Promise
+let _confirmResolve = function(){};
+function confirmDialog(opts) {
+  if (typeof opts === 'string') opts = { message: opts };
+  var o = Object.assign({ title:'Konfirmasi', message:'', okText:'Ya', cancelText:'Batal', danger:false, icon:null }, opts);
+  document.getElementById('confirm-title').textContent = o.title;
+  document.getElementById('confirm-msg').textContent = o.message;
+  var ic = document.getElementById('confirm-ic');
+  ic.textContent = o.icon || (o.danger ? '⚠️' : '❓');
+  ic.style.background = o.danger ? '#FEE2E2' : 'var(--tint)';
+  var ok = document.getElementById('confirm-ok');
+  ok.textContent = o.okText; ok.className = 'btn ' + (o.danger ? 'btn-danger' : 'btn-p');
+  document.getElementById('confirm-cancel').textContent = o.cancelText;
+  var modal = document.getElementById('confirm-modal');
+  modal.style.display = 'flex';
+  return new Promise(function(resolve){
+    _confirmResolve = function(val){ modal.style.display = 'none'; _confirmResolve = function(){}; resolve(val); };
+  });
+}
+
 function initApp() {
   if (!API_URL) { showSetup(); return; } // toko belum diaktivasi di perangkat ini
   const sess = localStorage.getItem(SESS_KEY);
